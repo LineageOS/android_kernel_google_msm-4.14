@@ -38,6 +38,37 @@ int idr_alloc_u32(struct idr *idr, void *ptr, u32 *nextid,
 }
 EXPORT_SYMBOL_GPL(idr_alloc_u32);
 
+/**
+ * idr_alloc_u32() - Allocate an ID.
+ * @idr: IDR handle.
+ * @ptr: Pointer to be associated with the new ID.
+ * @nextid: Pointer to an ID.
+ * @max: The maximum ID to allocate (inclusive).
+ * @gfp: Memory allocation flags.
+ *
+ * Allocates an unused ID in the range specified by @nextid and @max.
+ * Note that @max is inclusive whereas the @end parameter to idr_alloc()
+ * is exclusive.
+ *
+ * The caller should provide their own locking to ensure that two
+ * concurrent modifications to the IDR are not possible.  Read-only
+ * accesses to the IDR may be done under the RCU read lock or may
+ * exclude simultaneous writers.
+ *
+ * Return: 0 if an ID was allocated, -ENOMEM if memory allocation failed,
+ * or -ENOSPC if no free IDs could be found.  If an error occurred,
+ * @nextid is unchanged.
+ */
+int idr_alloc_u32(struct idr *idr, void *ptr, u32 *nextid,
+			unsigned long max, gfp_t gfp)
+{
+	unsigned long tmp = *nextid;
+	int ret = idr_alloc_ext(idr, ptr, &tmp, tmp, max + 1, gfp);
+	*nextid = tmp;
+	return ret;
+}
+EXPORT_SYMBOL_GPL(idr_alloc_u32);
+
 int idr_alloc_cmn(struct idr *idr, void *ptr, unsigned long *index,
 		  unsigned long start, unsigned long end, gfp_t gfp,
 		  bool ext)
