@@ -808,12 +808,12 @@ static void rmnet_shs_flush_core_work(struct work_struct *work)
 /* Flushes all the packets parked in order for this flow */
 void rmnet_shs_flush_node(struct rmnet_shs_skbn_s *node, u8 ctext)
 {
-	struct sk_buff *skb;
+	struct sk_buff *skb = NULL;
 	struct sk_buff *nxt_skb = NULL;
 	u32 skbs_delivered = 0;
 	u32 skb_bytes_delivered = 0;
-	u32 hash2stamp;
-	u8 map, maplen;
+	u32 hash2stamp = 0; /* the default value of skb->hash*/
+	u8 map = 0, maplen = 0;
 
 	if (!node->skb_list.head)
 		return;
@@ -969,8 +969,8 @@ int rmnet_shs_chk_and_flush_node(struct rmnet_shs_skbn_s *node,
 
 void rmnet_shs_flush_lock_table(u8 flsh, u8 ctxt)
 {
-	struct rmnet_shs_skbn_s *n;
-	struct list_head *ptr, *next;
+	struct rmnet_shs_skbn_s *n = NULL;
+	struct list_head *ptr = NULL, *next = NULL;
 	int cpu_num;
 	u32 cpu_tail;
 	u32 num_pkts_flush = 0;
@@ -1482,8 +1482,8 @@ void rmnet_shs_assign(struct sk_buff *skb, struct rmnet_port *port)
 	spin_lock_irqsave(&rmnet_shs_ht_splock, ht_flags);
 	do {
 		hash_for_each_possible_safe(RMNET_SHS_HT, node_p, tmp, list,
-					    skb->hash) {
-			if (skb->hash != node_p->hash)
+					    hash) {
+			if (hash != node_p->hash)
 				continue;
 
 
@@ -1496,6 +1496,7 @@ void rmnet_shs_assign(struct sk_buff *skb, struct rmnet_port *port)
 			rmnet_shs_chain_to_skb_list(skb, node_p);
 			is_match_found = 1;
 			is_shs_reqd = 1;
+			break;
 
 		}
 		if (is_match_found)
