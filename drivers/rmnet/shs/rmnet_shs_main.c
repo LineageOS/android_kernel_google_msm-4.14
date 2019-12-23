@@ -30,6 +30,8 @@
 #define NS_IN_MS 1000000
 #define LPWR_CLUSTER 0
 #define PERF_CLUSTER 4
+#define PERF_CORES 4
+
 #define INVALID_CPU -1
 
 #define WQ_DELAY 2000000
@@ -44,6 +46,8 @@
 DEFINE_SPINLOCK(rmnet_shs_ht_splock);
 DEFINE_HASHTABLE(RMNET_SHS_HT, RMNET_SHS_HT_SIZE);
 struct rmnet_shs_cpu_node_s rmnet_shs_cpu_node_tbl[MAX_CPUS];
+int cpu_num_flows[MAX_CPUS];
+
 /* Maintains a list of flows associated with a core
  * Also keeps track of number of packets processed on that core
  */
@@ -53,11 +57,11 @@ struct rmnet_shs_cfg_s rmnet_shs_cfg;
 
 struct rmnet_shs_flush_work shs_rx_work;
 /* Delayed workqueue that will be used to flush parked packets*/
-unsigned long int rmnet_shs_switch_reason[RMNET_SHS_SWITCH_MAX_REASON];
+unsigned long rmnet_shs_switch_reason[RMNET_SHS_SWITCH_MAX_REASON];
 module_param_array(rmnet_shs_switch_reason, ulong, 0, 0444);
 MODULE_PARM_DESC(rmnet_shs_switch_reason, "rmnet shs skb core swtich type");
 
-unsigned long int rmnet_shs_flush_reason[RMNET_SHS_FLUSH_MAX_REASON];
+unsigned long rmnet_shs_flush_reason[RMNET_SHS_FLUSH_MAX_REASON];
 module_param_array(rmnet_shs_flush_reason, ulong, 0, 0444);
 MODULE_PARM_DESC(rmnet_shs_flush_reason, "rmnet shs skb flush trigger type");
 
@@ -116,6 +120,8 @@ void rmnet_shs_cpu_node_remove(struct rmnet_shs_skbn_s *node)
 			    0xDEF, 0xDEF, 0xDEF, 0xDEF, NULL, NULL);
 
 	list_del_init(&node->node_id);
+	cpu_num_flows[node->map_cpu]--;
+
 }
 
 void rmnet_shs_cpu_node_add(struct rmnet_shs_skbn_s *node,
@@ -125,15 +131,18 @@ void rmnet_shs_cpu_node_add(struct rmnet_shs_skbn_s *node,
 			    0xDEF, 0xDEF, 0xDEF, 0xDEF, NULL, NULL);
 
 	list_add(&node->node_id, hd);
+	cpu_num_flows[node->map_cpu]++;
 }
 
 void rmnet_shs_cpu_node_move(struct rmnet_shs_skbn_s *node,
-			     struct list_head *hd)
+			     struct list_head *hd, int oldcpu)
 {
 	SHS_TRACE_LOW(RMNET_SHS_CPU_NODE, RMNET_SHS_CPU_NODE_FUNC_MOVE,
 			    0xDEF, 0xDEF, 0xDEF, 0xDEF, NULL, NULL);
 
 	list_move(&node->node_id, hd);
+	cpu_num_flows[node->map_cpu]++;
+	cpu_num_flows[oldcpu]--;
 }
 
 /* Evaluates the incoming transport protocol of the incoming skb. Determines
@@ -142,29 +151,101 @@ void rmnet_shs_cpu_node_move(struct rmnet_shs_skbn_s *node,
 int rmnet_shs_is_skb_stamping_reqd(struct sk_buff *skb)
 {
 	int ret_val = 0;
+	struct iphdr *ip4h;
+	struct ipv6hdr *ip6h;
 
-	/* SHS will ignore ICMP and frag pkts completely */
-	switch (skb->protocol) {
-	case htons(ETH_P_IP):
-		if (!ip_is_fragment(ip_hdr(skb)) &&
-		    ((ip_hdr(skb)->protocol == IPPROTO_TCP) ||
-		     (ip_hdr(skb)->protocol == IPPROTO_UDP)))
-			ret_val =  1;
+	/* This only applies to linear SKBs */
+	if (!skb_is_nonlinear(skb)) {
+		/* SHS will ignore ICMP and frag pkts completely */
+		switch (skb->protocol) {
+		case htons(ETH_P_IP):
+			if (!ip_is_fragment(ip_hdr(skb)) &&
+			((ip_hdr(skb)->protocol == IPPROTO_TCP) ||
+			(ip_hdr(skb)->protocol == IPPROTO_UDP))){
+				ret_val =  1;
+				break;
+			}
+			/* RPS logic is skipped if RPS hash is 0 while sw_hash
+			 * is set as active and packet is processed on the same
+			 * CPU as the initial caller.
+			 */
+			if (ip_hdr(skb)->protocol == IPPROTO_ICMP) {
+			    skb->hash = 0;
+			    skb->sw_hash = 1;
+			}
+			break;
 
-		break;
+		case htons(ETH_P_IPV6):
+			if (!(ipv6_hdr(skb)->nexthdr == NEXTHDR_FRAGMENT) &&
+			((ipv6_hdr(skb)->nexthdr == IPPROTO_TCP) ||
+			(ipv6_hdr(skb)->nexthdr == IPPROTO_UDP))) {
+				ret_val =  1;
+				break;
+			}
 
-	case htons(ETH_P_IPV6):
-		if (!(ipv6_hdr(skb)->nexthdr == NEXTHDR_FRAGMENT) &&
-		    ((ipv6_hdr(skb)->nexthdr == IPPROTO_TCP) ||
-		     (ipv6_hdr(skb)->nexthdr == IPPROTO_UDP)))
-			ret_val =  1;
+			/* RPS logic is skipped if RPS hash is 0 while sw_hash
+			 * is set as active and packet is processed on the same
+			 * CPU as the initial caller.
+			 */
+			if (ipv6_hdr(skb)->nexthdr == IPPROTO_ICMP) {
+			    skb->hash = 0;
+			    skb->sw_hash = 1;
+			}
 
-		break;
+			break;
 
-	default:
-		break;
+		default:
+			break;
+		}
+	} else {
+		switch (skb->protocol) {
+		case htons(ETH_P_IP):
+			ip4h = (struct iphdr *)rmnet_map_data_ptr(skb);
+
+			if (!(ntohs(ip4h->frag_off) & IP_MF) &&
+			    ((ntohs(ip4h->frag_off) & IP_OFFSET) == 0) &&
+			    (ip4h->protocol == IPPROTO_TCP ||
+			     ip4h->protocol == IPPROTO_UDP)) {
+				ret_val =  1;
+				break;
+			}
+			/* RPS logic is skipped if RPS hash is 0 while sw_hash
+			 * is set as active and packet is processed on the same
+			 * CPU as the initial caller.
+			 */
+			if (ip4h->protocol == IPPROTO_ICMP) {
+			    skb->hash = 0;
+			    skb->sw_hash = 1;
+			}
+
+			break;
+
+		case htons(ETH_P_IPV6):
+			ip6h = (struct ipv6hdr *)rmnet_map_data_ptr(skb);
+
+			if (!(ip6h->nexthdr == NEXTHDR_FRAGMENT) &&
+			((ip6h->nexthdr == IPPROTO_TCP) ||
+			(ip6h->nexthdr == IPPROTO_UDP))) {
+				ret_val =  1;
+				break;
+			}
+			/* RPS logic is skipped if RPS hash is 0 while sw_hash
+			 * is set as active and packet is processed on the same
+			 * CPU as the initial caller.
+			 */
+			if (ip6h->nexthdr == IPPROTO_ICMP) {
+			    skb->hash = 0;
+			    skb->sw_hash = 1;
+			}
+
+			break;
+
+		default:
+			break;
+		}
+
+
 	}
-
 	SHS_TRACE_LOW(RMNET_SHS_SKB_STAMPING, RMNET_SHS_SKB_STAMPING_END,
 			    ret_val, 0xDEF, 0xDEF, 0xDEF, skb, NULL);
 
@@ -176,7 +257,7 @@ static void rmnet_shs_update_core_load(int cpu, int burst)
 
 	struct  timespec time1;
 	struct  timespec *time2;
-	long int curinterval;
+	long curinterval;
 	int maxinterval = (rmnet_shs_inst_rate_interval < MIN_MS) ? MIN_MS :
 			   rmnet_shs_inst_rate_interval;
 
@@ -212,21 +293,39 @@ static int rmnet_shs_is_core_loaded(int cpu)
 /* We deliver packets to GRO module only for TCP traffic*/
 static int rmnet_shs_check_skb_can_gro(struct sk_buff *skb)
 {
-	int ret_val = -EPROTONOSUPPORT;
+	int ret_val = 0;
+	struct iphdr *ip4h;
+	struct ipv6hdr *ip6h;
 
-	switch (skb->protocol) {
-	case htons(ETH_P_IP):
-		if (ip_hdr(skb)->protocol == IPPROTO_TCP)
-			ret_val =  0;
-		break;
+	if (!skb_is_nonlinear(skb)) {
+		switch (skb->protocol) {
+		case htons(ETH_P_IP):
+			if (ip_hdr(skb)->protocol == IPPROTO_TCP)
+				ret_val = 1;
+			break;
 
-	case htons(ETH_P_IPV6):
-		if (ipv6_hdr(skb)->nexthdr == IPPROTO_TCP)
-			ret_val =  0;
-		break;
-	default:
-		ret_val =  -EPROTONOSUPPORT;
-		break;
+		case htons(ETH_P_IPV6):
+			if (ipv6_hdr(skb)->nexthdr == IPPROTO_TCP)
+				ret_val = 1;
+			break;
+		default:
+			break;
+		}
+	} else {
+		switch (skb->protocol) {
+		case htons(ETH_P_IP):
+			ip4h = (struct iphdr *)rmnet_map_data_ptr(skb);
+			if (ip4h->protocol == IPPROTO_TCP)
+				ret_val = 1;
+			break;
+		case htons(ETH_P_IPV6):
+			ip6h = (struct ipv6hdr *)rmnet_map_data_ptr(skb);
+			if (ip6h->nexthdr == IPPROTO_TCP)
+				ret_val = 1;
+			break;
+		default:
+			break;
+		}
 	}
 
 	SHS_TRACE_LOW(RMNET_SHS_SKB_CAN_GRO, RMNET_SHS_SKB_CAN_GRO_END,
@@ -244,8 +343,9 @@ static void rmnet_shs_deliver_skb(struct sk_buff *skb)
 	SHS_TRACE_LOW(RMNET_SHS_DELIVER_SKB, RMNET_SHS_DELIVER_SKB_START,
 			    0xDEF, 0xDEF, 0xDEF, 0xDEF, skb, NULL);
 
-	if (!rmnet_shs_check_skb_can_gro(skb)) {
-		if ((napi = get_current_napi_context())) {
+	if (rmnet_shs_check_skb_can_gro(skb)) {
+		napi = get_current_napi_context();
+		if (napi) {
 			napi_gro_receive(napi, skb);
 		} else {
 			priv = netdev_priv(skb->dev);
@@ -265,6 +365,48 @@ static void rmnet_shs_deliver_skb_wq(struct sk_buff *skb)
 
 	priv = netdev_priv(skb->dev);
 	gro_cells_receive(&priv->gro_cells, skb);
+}
+
+/* Delivers skbs after segmenting, directly to network stack */
+static void rmnet_shs_deliver_skb_segmented(struct sk_buff *in_skb, u8 ctext)
+{
+	struct sk_buff *skb = NULL;
+	struct sk_buff *nxt_skb = NULL;
+	struct sk_buff *segs = NULL;
+	int count = 0;
+
+	SHS_TRACE_LOW(RMNET_SHS_DELIVER_SKB, RMNET_SHS_DELIVER_SKB_START,
+			    0x1, 0xDEF, 0xDEF, 0xDEF, in_skb, NULL);
+
+	segs = __skb_gso_segment(in_skb, NETIF_F_SG, false);
+	if (unlikely(IS_ERR_OR_NULL(segs))) {
+		if (ctext == RMNET_RX_CTXT)
+			netif_receive_skb(in_skb);
+		else
+			netif_rx(in_skb);
+
+		return;
+	}
+
+	/* Send segmeneted skb */
+	for ((skb = segs); skb != NULL; skb = nxt_skb) {
+		nxt_skb = skb->next;
+
+		skb->hash = in_skb->hash;
+		skb->dev = in_skb->dev;
+		skb->next = NULL;
+
+		if (ctext == RMNET_RX_CTXT)
+			netif_receive_skb(skb);
+		else
+			netif_rx(skb);
+
+		count += 1;
+	}
+
+	consume_skb(in_skb);
+
+	return;
 }
 
 int rmnet_shs_flow_num_perf_cores(struct rmnet_shs_skbn_s *node_p)
@@ -328,9 +470,9 @@ u8 rmnet_shs_mask_from_map(struct rps_map *map)
 	u8 mask = 0;
 	u8 i;
 
-	for (i = 0; i < map->len; i++) {
+	for (i = 0; i < map->len; i++)
 		mask |= 1 << map->cpus[i];
-	}
+
 	return mask;
 }
 
@@ -344,6 +486,37 @@ int rmnet_shs_get_mask_len(u8 mask)
 			sum++;
 	}
 	return sum;
+}
+
+int rmnet_shs_get_core_prio_flow(u8 mask)
+{
+	int ret = INVALID_CPU;
+	int least_flows = INVALID_CPU;
+	u8 curr_idx = 0;
+	u8 i;
+
+	/* Return 1st free core or the core with least # flows
+	 */
+	for (i = 0; i < MAX_CPUS; i++) {
+
+		if (!(mask & (1 << i)))
+			continue;
+
+		if (mask & (1 << i))
+			curr_idx++;
+
+		if (list_empty(&rmnet_shs_cpu_node_tbl[i].node_list_id))
+			return i;
+
+		if (cpu_num_flows[i] <= least_flows ||
+		    least_flows == INVALID_CPU) {
+			ret = i;
+			least_flows = cpu_num_flows[i];
+		}
+
+	}
+
+	return ret;
 }
 
 /* Take a index and a mask and returns what active CPU is
@@ -387,7 +560,7 @@ int rmnet_shs_idx_from_cpu(u8 cpu, u8 mask)
 			ret = idx;
 			break;
 		}
-		if(mask & (1 << i))
+		if (mask & (1 << i))
 			idx++;
 	}
 	return ret;
@@ -427,7 +600,8 @@ int rmnet_shs_get_suggested_cpu(struct rmnet_shs_skbn_s *node)
 	/* Return same perf core unless moving to gold from silver*/
 	if (rmnet_shs_cpu_node_tbl[node->map_cpu].prio &&
 	    rmnet_shs_is_lpwr_cpu(node->map_cpu)) {
-		cpu = rmnet_shs_wq_get_least_utilized_core(0xF0);
+		cpu = rmnet_shs_get_core_prio_flow(PERF_MASK &
+						   rmnet_shs_cfg.map_mask);
 		if (cpu < 0 && node->hstats != NULL)
 			cpu = node->hstats->suggested_cpu;
 	} else if (node->hstats != NULL)
@@ -439,14 +613,14 @@ int rmnet_shs_get_suggested_cpu(struct rmnet_shs_skbn_s *node)
 int rmnet_shs_get_hash_map_idx_to_stamp(struct rmnet_shs_skbn_s *node)
 {
 	int cpu, idx = INVALID_CPU;
-	cpu = rmnet_shs_get_suggested_cpu(node);
 
+	cpu = rmnet_shs_get_suggested_cpu(node);
 	idx = rmnet_shs_idx_from_cpu(cpu, rmnet_shs_cfg.map_mask);
 
-        /* If suggested CPU is no longer in mask. Try using current.*/
-        if (unlikely(idx < 0))
-                idx = rmnet_shs_idx_from_cpu(node->map_cpu,
-                                             rmnet_shs_cfg.map_mask);
+	/* If suggested CPU is no longer in mask. Try using current.*/
+	if (unlikely(idx < 0))
+		idx = rmnet_shs_idx_from_cpu(node->map_cpu,
+					     rmnet_shs_cfg.map_mask);
 
 	SHS_TRACE_LOW(RMNET_SHS_HASH_MAP,
 			    RMNET_SHS_HASH_MAP_IDX_TO_STAMP,
@@ -568,7 +742,7 @@ int rmnet_shs_node_can_flush_pkts(struct rmnet_shs_skbn_s *node, u8 force_flush)
 			break;
 		}
 		node->is_shs_enabled = 1;
-		if (!map){
+		if (!map) {
 			node->is_shs_enabled = 0;
 			ret = 1;
 			break;
@@ -589,12 +763,12 @@ int rmnet_shs_node_can_flush_pkts(struct rmnet_shs_skbn_s *node, u8 force_flush)
 		    (force_flush)) {
 			if (rmnet_shs_switch_cores) {
 
-			/* Move the amount parked to other core's count
-			 * Update old core's parked to not include diverted
-			 * packets and update new core's packets
-			 */
-			new_cpu = rmnet_shs_cpu_from_idx(cpu_map_index,
-							 rmnet_shs_cfg.map_mask);
+				/* Move the amount parked to other core's count
+				 * Update old core's parked to not include diverted
+				 * packets and update new core's packets
+				 */
+				new_cpu = rmnet_shs_cpu_from_idx(cpu_map_index,
+								 rmnet_shs_cfg.map_mask);
 				if (new_cpu < 0) {
 					ret = 1;
 					break;
@@ -607,7 +781,7 @@ int rmnet_shs_node_can_flush_pkts(struct rmnet_shs_skbn_s *node, u8 force_flush)
 
 				if (cur_cpu_qhead < node_qhead) {
 					rmnet_shs_switch_reason[RMNET_SHS_OOO_PACKET_SWITCH]++;
-					rmnet_shs_switch_reason[RMNET_SHS_OOO_PACKET_TOTAL]+=
+					rmnet_shs_switch_reason[RMNET_SHS_OOO_PACKET_TOTAL] +=
 							(node_qhead -
 							cur_cpu_qhead);
 				}
@@ -628,7 +802,8 @@ int rmnet_shs_node_can_flush_pkts(struct rmnet_shs_skbn_s *node, u8 force_flush)
 				rmnet_shs_update_cpu_proc_q_all_cpus();
 				node->queue_head = cpun->qhead;
 				rmnet_shs_cpu_node_move(node,
-							&cpun->node_list_id);
+							&cpun->node_list_id,
+							cpu_num);
 				SHS_TRACE_HIGH(RMNET_SHS_FLUSH,
 					RMNET_SHS_FLUSH_NODE_CORE_SWITCH,
 					node->map_cpu, prev_cpu,
@@ -714,12 +889,13 @@ static void rmnet_shs_flush_core_work(struct work_struct *work)
 /* Flushes all the packets parked in order for this flow */
 void rmnet_shs_flush_node(struct rmnet_shs_skbn_s *node, u8 ctext)
 {
-	struct sk_buff *skb;
+	struct sk_buff *skb = NULL;
 	struct sk_buff *nxt_skb = NULL;
 	u32 skbs_delivered = 0;
 	u32 skb_bytes_delivered = 0;
-	u32 hash2stamp;
-	u8 map, maplen;
+	u32 hash2stamp = 0; /* the default value of skb->hash*/
+	u8 map = 0, maplen = 0;
+	u8 segment_enable = 0;
 
 	if (!node->skb_list.head)
 		return;
@@ -741,6 +917,8 @@ void rmnet_shs_flush_node(struct rmnet_shs_skbn_s *node, u8 ctext)
 			     node->skb_list.num_parked_bytes,
 			     node, node->skb_list.head);
 
+	segment_enable = node->hstats->segment_enable;
+
 	for ((skb = node->skb_list.head); skb != NULL; skb = nxt_skb) {
 
 		nxt_skb = skb->next;
@@ -750,11 +928,15 @@ void rmnet_shs_flush_node(struct rmnet_shs_skbn_s *node, u8 ctext)
 		skb->next = NULL;
 		skbs_delivered += 1;
 		skb_bytes_delivered += skb->len;
-		if (ctext == RMNET_RX_CTXT)
-			rmnet_shs_deliver_skb(skb);
-		else
-			rmnet_shs_deliver_skb_wq(skb);
 
+		if (segment_enable) {
+			rmnet_shs_deliver_skb_segmented(skb, ctext);
+		} else {
+			if (ctext == RMNET_RX_CTXT)
+				rmnet_shs_deliver_skb(skb);
+			else
+				rmnet_shs_deliver_skb_wq(skb);
+		}
 	}
 
 	node->skb_list.num_parked_skbs = 0;
@@ -822,14 +1004,14 @@ int rmnet_shs_chk_and_flush_node(struct rmnet_shs_skbn_s *node,
 
 	SHS_TRACE_HIGH(RMNET_SHS_FLUSH,
 			     RMNET_SHS_FLUSH_CHK_AND_FLUSH_NODE_START,
-			     force_flush, 0xDEF, 0xDEF, 0xDEF,
+			     force_flush, ctxt, 0xDEF, 0xDEF,
 			     node, NULL);
 	/* Return saved cpu assignment if an entry found*/
 	if (rmnet_shs_cpu_from_idx(node->map_index, map) != node->map_cpu) {
 
 		/* Keep flow on the same core if possible
-		* or put Orphaned flow on the default 1st core
-		*/
+		 * or put Orphaned flow on the default 1st core
+		 */
 		map_idx = rmnet_shs_idx_from_cpu(node->map_cpu,
 							map);
 		if (map_idx >= 0) {
@@ -875,8 +1057,8 @@ int rmnet_shs_chk_and_flush_node(struct rmnet_shs_skbn_s *node,
 
 void rmnet_shs_flush_lock_table(u8 flsh, u8 ctxt)
 {
-	struct rmnet_shs_skbn_s *n;
-	struct list_head *ptr, *next;
+	struct rmnet_shs_skbn_s *n = NULL;
+	struct list_head *ptr = NULL, *next = NULL;
 	int cpu_num;
 	u32 cpu_tail;
 	u32 num_pkts_flush = 0;
@@ -923,8 +1105,8 @@ void rmnet_shs_flush_lock_table(u8 flsh, u8 ctxt)
 					rmnet_shs_cpu_node_tbl[n->map_cpu].parkedlen -= num_pkts_flush;
 					n->skb_list.skb_load = 0;
 					if (n->map_cpu == cpu_num) {
-					       cpu_tail += num_pkts_flush;
-					       n->queue_head = cpu_tail;
+						cpu_tail += num_pkts_flush;
+						n->queue_head = cpu_tail;
 
 					}
 				}
@@ -945,6 +1127,7 @@ void rmnet_shs_flush_lock_table(u8 flsh, u8 ctxt)
 			    !rmnet_shs_cpu_node_tbl[cpu_num].prio) {
 
 				rmnet_shs_cpu_node_tbl[cpu_num].prio = 1;
+				rmnet_shs_boost_cpus();
 				if (hrtimer_active(&GET_CTIMER(cpu_num)))
 					hrtimer_cancel(&GET_CTIMER(cpu_num));
 
@@ -980,9 +1163,8 @@ void rmnet_shs_flush_lock_table(u8 flsh, u8 ctxt)
 		rmnet_shs_cfg.is_pkt_parked = 0;
 		rmnet_shs_cfg.force_flush_state = RMNET_SHS_FLUSH_DONE;
 		if (rmnet_shs_fall_back_timer) {
-			if (hrtimer_active(&rmnet_shs_cfg.hrtimer_shs)) {
+			if (hrtimer_active(&rmnet_shs_cfg.hrtimer_shs))
 				hrtimer_cancel(&rmnet_shs_cfg.hrtimer_shs);
-			}
 		}
 
 	}
@@ -1009,59 +1191,30 @@ void rmnet_shs_chain_to_skb_list(struct sk_buff *skb,
 {
 	u8 pushflush = 0;
 	struct napi_struct *napi = get_current_napi_context();
-	/* UDP GRO should tell us how many packets make up a
-	 * coalesced packet. Use that instead for stats for wq
-	 * Node stats only used by WQ
-	 * Parkedlen useful for cpu stats used by old IB
-	 * skb_load used by IB + UDP coals
+
+	/* Early flush for TCP if PSH packet.
+	 * Flush before parking PSH packet.
 	 */
+	if (skb->cb[SKB_FLUSH]) {
+		rmnet_shs_flush_lock_table(0, RMNET_RX_CTXT);
+		rmnet_shs_flush_reason[RMNET_SHS_FLUSH_PSH_PKT_FLUSH]++;
+		napi_gro_flush(napi, false);
+		pushflush = 1;
+	}
 
-	if ((skb->protocol == htons(ETH_P_IP) &&
-	     ip_hdr(skb)->protocol == IPPROTO_UDP) ||
-	    (skb->protocol == htons(ETH_P_IPV6) &&
-	     ipv6_hdr(skb)->nexthdr == IPPROTO_UDP)) {
-
-		if (skb_shinfo(skb)->gso_segs) {
-			node->num_skb += skb_shinfo(skb)->gso_segs;
-			rmnet_shs_cpu_node_tbl[node->map_cpu].parkedlen++;
-			node->skb_list.skb_load += skb_shinfo(skb)->gso_segs;
-		} else {
-			node->num_skb += 1;
-			rmnet_shs_cpu_node_tbl[node->map_cpu].parkedlen++;
-			node->skb_list.skb_load++;
-
-		}
+	/* Support for gso marked packets */
+	if (skb_shinfo(skb)->gso_segs) {
+		node->num_skb += skb_shinfo(skb)->gso_segs;
+		rmnet_shs_cpu_node_tbl[node->map_cpu].parkedlen++;
+		node->skb_list.skb_load += skb_shinfo(skb)->gso_segs;
 	} else {
-		/* This should only have TCP based on current
-		 * rmnet_shs_is_skb_stamping_reqd logic. Unoptimal
-		 * if non UDP/TCP protos are supported
-		 */
-
-		/* Early flush for TCP if PSH packet.
-		 * Flush before parking PSH packet.
-		 */
-		if (skb->cb[SKB_FLUSH]){
-			rmnet_shs_flush_lock_table(0, RMNET_RX_CTXT);
-			rmnet_shs_flush_reason[RMNET_SHS_FLUSH_PSH_PKT_FLUSH]++;
-			napi_gro_flush(napi, false);
-			pushflush = 1;
-		}
-
-		/* TCP support for gso marked packets */
-		if (skb_shinfo(skb)->gso_segs) {
-			node->num_skb += skb_shinfo(skb)->gso_segs;
-			rmnet_shs_cpu_node_tbl[node->map_cpu].parkedlen++;
-			node->skb_list.skb_load += skb_shinfo(skb)->gso_segs;
-		} else {
-			node->num_skb += 1;
-			rmnet_shs_cpu_node_tbl[node->map_cpu].parkedlen++;
-			node->skb_list.skb_load++;
-
-		}
+		node->num_skb += 1;
+		rmnet_shs_cpu_node_tbl[node->map_cpu].parkedlen++;
+		node->skb_list.skb_load++;
 
 	}
-	node->num_skb_bytes += skb->len;
 
+	node->num_skb_bytes += skb->len;
 	node->skb_list.num_parked_bytes += skb->len;
 	rmnet_shs_cfg.num_bytes_parked  += skb->len;
 
@@ -1116,9 +1269,8 @@ static void rmnet_flush_buffered(struct work_struct *work)
 		if (rmnet_shs_fall_back_timer &&
 		    rmnet_shs_cfg.num_bytes_parked &&
 		    rmnet_shs_cfg.num_pkts_parked){
-			if(hrtimer_active(&rmnet_shs_cfg.hrtimer_shs)) {
+			if (hrtimer_active(&rmnet_shs_cfg.hrtimer_shs))
 				hrtimer_cancel(&rmnet_shs_cfg.hrtimer_shs);
-			}
 
 			hrtimer_start(&rmnet_shs_cfg.hrtimer_shs,
 				      ns_to_ktime(rmnet_shs_timeout * NS_IN_MS),
@@ -1179,8 +1331,9 @@ enum hrtimer_restart rmnet_shs_queue_core(struct hrtimer *t)
 	struct core_flush_s *core_work = container_of(t,
 				 struct core_flush_s, core_timer);
 
-	schedule_work(&core_work->work);
+	rmnet_shs_reset_cpus();
 
+	schedule_work(&core_work->work);
 	return ret;
 }
 
@@ -1226,6 +1379,12 @@ void rmnet_shs_ps_off_hdlr(void *port)
 	rmnet_shs_wq_restart();
 }
 
+void rmnet_shs_dl_hdr_handler_v2(struct rmnet_map_dl_ind_hdr *dlhdr,
+			      struct rmnet_map_control_command_header *qcmd)
+{
+	rmnet_shs_dl_hdr_handler(dlhdr);
+}
+
 void rmnet_shs_dl_hdr_handler(struct rmnet_map_dl_ind_hdr *dlhdr)
 {
 
@@ -1244,6 +1403,12 @@ void rmnet_shs_dl_hdr_handler(struct rmnet_map_dl_ind_hdr *dlhdr)
 /* Triggers flushing of all packets upon DL trailer
  * receiving a DL trailer marker
  */
+void rmnet_shs_dl_trl_handler_v2(struct rmnet_map_dl_ind_trl *dltrl,
+			      struct rmnet_map_control_command_header *qcmd)
+{
+	rmnet_shs_dl_trl_handler(dltrl);
+}
+
 void rmnet_shs_dl_trl_handler(struct rmnet_map_dl_ind_trl *dltrl)
 {
 
@@ -1263,19 +1428,28 @@ void rmnet_shs_init(struct net_device *dev, struct net_device *vnd)
 {
 	struct rps_map *map;
 	u8 num_cpu;
+	u8 map_mask;
+	u8 map_len;
 
 	if (rmnet_shs_cfg.rmnet_shs_init_complete)
 		return;
 	map = rcu_dereference(vnd->_rx->rps_map);
 
-	if (!map)
-		return;
+	if (!map) {
+		map_mask = 0;
+		map_len = 0;
+	} else {
+		map_mask = rmnet_shs_mask_from_map(map);
+		map_len = rmnet_shs_get_mask_len(map_mask);
+	}
 
 	rmnet_shs_cfg.port = rmnet_get_port(dev);
-	rmnet_shs_cfg.map_mask = rmnet_shs_mask_from_map(map);
-	rmnet_shs_cfg.map_len = rmnet_shs_get_mask_len(rmnet_shs_cfg.map_mask);
+	rmnet_shs_cfg.map_mask = map_mask;
+	rmnet_shs_cfg.map_len = map_len;
 	for (num_cpu = 0; num_cpu < MAX_CPUS; num_cpu++)
 		INIT_LIST_HEAD(&rmnet_shs_cpu_node_tbl[num_cpu].node_list_id);
+
+	rmnet_shs_freq_init();
 
 	rmnet_shs_cfg.rmnet_shs_init_complete = 1;
 }
@@ -1318,16 +1492,33 @@ void rmnet_shs_cancel_table(void)
 void rmnet_shs_get_update_skb_proto(struct sk_buff *skb,
 				    struct rmnet_shs_skbn_s *node_p)
 {
-	switch (skb->protocol) {
-	case htons(ETH_P_IP):
-		node_p->skb_tport_proto = ip_hdr(skb)->protocol;
-		break;
-	case htons(ETH_P_IPV6):
-		node_p->skb_tport_proto = ipv6_hdr(skb)->nexthdr;
-		break;
-	default:
-		node_p->skb_tport_proto = IPPROTO_RAW;
-		break;
+	struct iphdr *ip4h;
+	struct ipv6hdr *ip6h;
+
+	if (!skb_is_nonlinear(skb)) {
+		switch (skb->protocol) {
+		case htons(ETH_P_IP):
+			node_p->skb_tport_proto = ip_hdr(skb)->protocol;
+			break;
+		case htons(ETH_P_IPV6):
+			node_p->skb_tport_proto = ipv6_hdr(skb)->nexthdr;
+			break;
+		default:
+			break;
+		}
+	} else {
+		switch (skb->protocol) {
+		case htons(ETH_P_IP):
+			ip4h = (struct iphdr *)rmnet_map_data_ptr(skb);
+			node_p->skb_tport_proto = ip4h->protocol;
+			break;
+		case htons(ETH_P_IPV6):
+			ip6h = (struct ipv6hdr *)rmnet_map_data_ptr(skb);
+			node_p->skb_tport_proto = ip6h->nexthdr;
+			break;
+		default:
+			break;
+		}
 	}
 }
 
@@ -1359,7 +1550,7 @@ void rmnet_shs_assign(struct sk_buff *skb, struct rmnet_port *port)
 		return;
 	}
 
-	if ((unlikely(!map))|| !rmnet_shs_cfg.rmnet_shs_init_complete) {
+	if ((unlikely(!map)) || !rmnet_shs_cfg.rmnet_shs_init_complete) {
 		rmnet_shs_deliver_skb(skb);
 		SHS_TRACE_ERR(RMNET_SHS_ASSIGN,
 				    RMNET_SHS_ASSIGN_CRIT_ERROR_NO_SHS_REQD,
@@ -1377,8 +1568,8 @@ void rmnet_shs_assign(struct sk_buff *skb, struct rmnet_port *port)
 	spin_lock_irqsave(&rmnet_shs_ht_splock, ht_flags);
 	do {
 		hash_for_each_possible_safe(RMNET_SHS_HT, node_p, tmp, list,
-					    skb->hash) {
-			if (skb->hash != node_p->hash)
+					    hash) {
+			if (hash != node_p->hash)
 				continue;
 
 
@@ -1391,6 +1582,7 @@ void rmnet_shs_assign(struct sk_buff *skb, struct rmnet_port *port)
 			rmnet_shs_chain_to_skb_list(skb, node_p);
 			is_match_found = 1;
 			is_shs_reqd = 1;
+			break;
 
 		}
 		if (is_match_found)
@@ -1457,15 +1649,6 @@ void rmnet_shs_assign(struct sk_buff *skb, struct rmnet_port *port)
 		return;
 	}
 
-	if (!rmnet_shs_cfg.is_reg_dl_mrk_ind) {
-		rmnet_map_dl_ind_register(port, &rmnet_shs_cfg.dl_mrk_ind_cb);
-		qmi_rmnet_ps_ind_register(port,
-					  &rmnet_shs_cfg.rmnet_idl_ind_cb);
-
-		rmnet_shs_cfg.is_reg_dl_mrk_ind = 1;
-		shs_rx_work.port = port;
-
-	}
 	/* We got the first packet after a previous successdul flush. Arm the
 	 * flushing timer.
 	 */
@@ -1543,9 +1726,7 @@ void rmnet_shs_assign(struct sk_buff *skb, struct rmnet_port *port)
  */
 void rmnet_shs_exit(void)
 {
-	qmi_rmnet_ps_ind_deregister(rmnet_shs_cfg.port,
-				    &rmnet_shs_cfg.rmnet_idl_ind_cb);
-
+	rmnet_shs_freq_exit();
 	rmnet_shs_cfg.dl_mrk_ind_cb.dl_hdr_handler = NULL;
 	rmnet_shs_cfg.dl_mrk_ind_cb.dl_trl_handler = NULL;
 	rmnet_map_dl_ind_deregister(rmnet_shs_cfg.port,
@@ -1555,6 +1736,7 @@ void rmnet_shs_exit(void)
 		hrtimer_cancel(&rmnet_shs_cfg.hrtimer_shs);
 
 	memset(&rmnet_shs_cfg, 0, sizeof(rmnet_shs_cfg));
+	rmnet_shs_cfg.port = NULL;
 	rmnet_shs_cfg.rmnet_shs_init_complete = 0;
 
 }
