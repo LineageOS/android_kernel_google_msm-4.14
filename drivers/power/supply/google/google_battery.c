@@ -6029,7 +6029,7 @@ static void google_battery_init_work(struct work_struct *work)
 	if (ret < 0) {
 		pr_info("time to full not available\n");
 	} else {
-		batt_drv->ttf_stats.ttf_log = debugfs_logbuffer_register("ttf");
+		batt_drv->ttf_stats.ttf_log = logbuffer_register("ttf");
 		if (IS_ERR(batt_drv->ttf_stats.ttf_log)) {
 			ret = PTR_ERR(batt_drv->ttf_stats.ttf_log);
 			dev_err(batt_drv->device,
@@ -6161,7 +6161,7 @@ static int google_battery_probe(struct platform_device *pdev)
 			"Couldn't register as power supply, ret=%d\n", ret);
 	}
 
-	batt_drv->ssoc_log = debugfs_logbuffer_register("ssoc");
+	batt_drv->ssoc_log = logbuffer_register("ssoc");
 	if (IS_ERR(batt_drv->ssoc_log)) {
 		ret = PTR_ERR(batt_drv->ssoc_log);
 		dev_err(batt_drv->device,
@@ -6226,9 +6226,9 @@ static int google_battery_remove(struct platform_device *pdev)
 	sysfs_remove_group(&batt_drv->psy->dev.kobj, &batt_attr_grp);
 
 	if (batt_drv->ssoc_log)
-		debugfs_logbuffer_unregister(batt_drv->ssoc_log);
+		logbuffer_unregister(batt_drv->ssoc_log);
 	if (ttf_stats->ttf_log)
-		debugfs_logbuffer_unregister(ttf_stats->ttf_log);
+		logbuffer_unregister(ttf_stats->ttf_log);
 	if (batt_drv->tz_dev)
 		thermal_zone_of_sensor_unregister(batt_drv->device,
 				batt_drv->tz_dev);

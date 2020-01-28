@@ -3744,11 +3744,10 @@ static int smb5_probe(struct platform_device *pdev)
 	else
 		return -EPROBE_DEFER;
 
-	chg->log = debugfs_logbuffer_register("smblib");
+	chg->log = logbuffer_register("smblib");
 	if (IS_ERR_OR_NULL(chg->log)) {
-		pr_err("failed to obtain logbuffer instance rc:%ld",
-		       PTR_ERR(chg->log));
-		return PTR_ERR(chg->log);
+		pr_err("failed to obtain logbuffer instance\n");
+		chg->log = NULL;
 	}
 
 	rc = smblib_init(chg);
@@ -3905,7 +3904,8 @@ cleanup:
 	smblib_deinit(chg);
 	platform_set_drvdata(pdev, NULL);
 unregister_buffer:
-	debugfs_logbuffer_unregister(chg->log);
+	if (chg->log)
+		logbuffer_unregister(chg->log);
 
 	return rc;
 }
@@ -3922,7 +3922,9 @@ static int smb5_remove(struct platform_device *pdev)
 	smb5_free_interrupts(chg);
 	smblib_deinit(chg);
 	platform_set_drvdata(pdev, NULL);
-	debugfs_logbuffer_unregister(chg->log);
+	if (chg->log)
+		logbuffer_unregister(chg->log);
+
 	return 0;
 }
 
