@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -36,9 +36,13 @@
 extern unsigned long long rmnet_shs_cpu_rx_max_pps_thresh[MAX_CPUS]__read_mostly;
 extern unsigned long long rmnet_shs_cpu_rx_min_pps_thresh[MAX_CPUS]__read_mostly;
 
+extern struct list_head rmnet_shs_wq_ep_tbl;
+
 /* stores wq and end point details */
 
 struct rmnet_shs_wq_ep_s {
+	u64 tcp_rx_bps;
+	u64 udp_rx_bps;
 	struct list_head ep_list_id;
 	struct net_device *ep;
 	int  new_lo_core[MAX_CPUS];
@@ -161,6 +165,7 @@ struct rmnet_shs_wq_cpu_cap_s {
 	struct list_head cpu_cap_list;
 	u64 pps_capacity;
 	u64 avg_pps_capacity;
+	u64 bps;
 	u16 cpu_num;
 };
 
@@ -284,5 +289,9 @@ int rmnet_shs_wq_try_to_move_flow(u16 cur_cpu, u16 dest_cpu, u32 hash_to_move,
 				  u32 sugg_type);
 
 int rmnet_shs_wq_set_flow_segmentation(u32 hash_to_set, u8 seg_enable);
+
+void rmnet_shs_wq_ep_lock_bh(void);
+
+void rmnet_shs_wq_ep_unlock_bh(void);
 
 #endif /*_RMNET_SHS_WQ_H_*/
