@@ -1881,7 +1881,10 @@ struct DWC_ETH_QOS_prv_data {
 	struct class* avb_class_b_class;
 	struct delayed_work ipv6_addr_assign_wq;
 	bool print_kpi;
+<<<<<<< HEAD
 	unsigned long default_ptp_clock;
+=======
+>>>>>>> LA.UM.9.1.R1.10.00.00.604.030
 	bool wol_enabled;
 };
 
