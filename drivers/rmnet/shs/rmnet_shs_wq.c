@@ -32,23 +32,19 @@ MODULE_LICENSE("GPL v2");
 #define RMNET_SHS_FILTER_FLOW_RATE 100
 
 #define PERIODIC_CLEAN 0
-/* FORCE_CLEAN should only used during module de-ini.*/
+/* FORCE_CLEAN should only used during module de-init.*/
 #define FORCE_CLEAN 1
-/* Time to wait (in time ticks) before re-triggering the workqueue
- *	1   tick  = 10 ms (Maximum possible resolution)
- *	100 ticks = 1 second
- */
 
 /* Local Definitions and Declarations */
 unsigned int rmnet_shs_cpu_prio_dur __read_mostly = 3;
 module_param(rmnet_shs_cpu_prio_dur, uint, 0644);
-MODULE_PARM_DESC(rmnet_shs_cpu_prio_dur, "Priority ignore duration(ticks)");
+MODULE_PARM_DESC(rmnet_shs_cpu_prio_dur, "Priority ignore duration (wq intervals)");
 
 #define PRIO_BACKOFF ((!rmnet_shs_cpu_prio_dur) ? 2 : rmnet_shs_cpu_prio_dur)
 
-unsigned int rmnet_shs_wq_frequency __read_mostly = RMNET_SHS_WQ_DELAY_TICKS;
-module_param(rmnet_shs_wq_frequency, uint, 0644);
-MODULE_PARM_DESC(rmnet_shs_wq_frequency, "Priodicity of Wq trigger(in ticks)");
+unsigned int rmnet_shs_wq_interval_ms __read_mostly = RMNET_SHS_WQ_INTERVAL_MS;
+module_param(rmnet_shs_wq_interval_ms, uint, 0644);
+MODULE_PARM_DESC(rmnet_shs_wq_interval_ms, "Interval between wq runs (ms)");
 
 unsigned long rmnet_shs_max_flow_inactivity_sec __read_mostly =
 						RMNET_SHS_MAX_SKB_INACTIVE_TSEC;
@@ -91,7 +87,7 @@ module_param_array(rmnet_shs_cpu_rx_flows, uint, 0, 0444);
 MODULE_PARM_DESC(rmnet_shs_cpu_rx_flows, "Num flows processed per core");
 
 unsigned int rmnet_shs_cpu_rx_filter_flows[MAX_CPUS];
-module_param_array(rmnet_shs_cpu_rx_filter_flows, uint, 0, 0644);
+module_param_array(rmnet_shs_cpu_rx_filter_flows, uint, 0, 0444);
 MODULE_PARM_DESC(rmnet_shs_cpu_rx_filter_flows, "Num filtered flows per core");
 
 unsigned long long rmnet_shs_cpu_rx_bytes[MAX_CPUS];
@@ -1943,14 +1939,18 @@ void rmnet_shs_update_cfg_mask(void)
 
 void rmnet_shs_wq_filter(void)
 {
-	int cpu;
+	int cpu, cur_cpu;
 	int temp;
 	struct rmnet_shs_wq_hstat_s *hnode = NULL;
 
-	for (cpu = 0; cpu < MAX_CPUS; cpu++)
+	for (cpu = 0; cpu < MAX_CPUS; cpu++) {
 		rmnet_shs_cpu_rx_filter_flows[cpu] = 0;
+		rmnet_shs_cpu_node_tbl[cpu].seg = 0;
+	}
 
-	/* Filter out flows with low pkt count */
+	/* Filter out flows with low pkt count and
+	 * mark CPUS with slowstart flows
+	 */
 	list_for_each_entry(hnode, &rmnet_shs_wq_hstat_tbl, hstat_node_id) {
 
 		if (hnode->in_use == 0)
@@ -1961,6 +1961,14 @@ void rmnet_shs_wq_filter(void)
 				temp = hnode->current_cpu;
 				rmnet_shs_cpu_rx_filter_flows[temp]++;
 			}
+		cur_cpu = hnode->current_cpu;
+		if (cur_cpu >= MAX_CPUS) {
+			continue;
+		}
+
+		if (hnode->node->hstats->segment_enable) {
+			rmnet_shs_cpu_node_tbl[cur_cpu].seg++;
+		}
 	}
 }
 
@@ -2016,10 +2024,13 @@ void rmnet_shs_wq_update_stats(void)
 
 	rmnet_shs_wq_refresh_new_flow_list();
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 	/*Invoke after both the locks are released*/
 	rmnet_shs_wq_cleanup_hash_tbl(PERIODIC_CLEAN);
 	rmnet_shs_wq_debug_print_flows();
+=======
+>>>>>>> LA.UM.9.1.R1.10.00.00.604.035
 	rmnet_shs_wq_filter();
 >>>>>>> LA.UM.9.1.R1.10.00.00.604.030
 }
@@ -2027,6 +2038,7 @@ void rmnet_shs_wq_update_stats(void)
 void rmnet_shs_wq_process_wq(struct work_struct *work)
 {
 	unsigned long flags;
+	unsigned long jiffies;
 
 	trace_rmnet_shs_wq_high(RMNET_SHS_WQ_PROCESS_WQ,
 				RMNET_SHS_WQ_PROCESS_WQ_START,
@@ -2040,8 +2052,13 @@ void rmnet_shs_wq_process_wq(struct work_struct *work)
         rmnet_shs_wq_cleanup_hash_tbl(PERIODIC_CLEAN);
         rmnet_shs_wq_debug_print_flows();
 
+<<<<<<< HEAD
+=======
+	jiffies = msecs_to_jiffies(rmnet_shs_wq_interval_ms);
+
+>>>>>>> LA.UM.9.1.R1.10.00.00.604.035
 	queue_delayed_work(rmnet_shs_wq, &rmnet_shs_delayed_wq->wq,
-					rmnet_shs_wq_frequency);
+			   jiffies);
 
 	trace_rmnet_shs_wq_high(RMNET_SHS_WQ_PROCESS_WQ,
 				RMNET_SHS_WQ_PROCESS_WQ_END,
