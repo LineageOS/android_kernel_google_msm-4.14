@@ -223,11 +223,9 @@ typedef struct tagSmeStruct {
 					tSirLLStatsResults *rsp);
 #endif /* WLAN_FEATURE_LINK_LAYER_STATS */
 
-#ifdef WLAN_POWER_DEBUGFS
 	void *power_debug_stats_context;
 	void (*power_stats_resp_callback)(struct power_stats_response *rsp,
 						void *callback_context);
-#endif
 #ifdef WLAN_FEATURE_BEACON_RECEPTION_STATS
 	void *beacon_stats_context;
 	void (*beacon_stats_resp_callback)(struct bcn_reception_stats_rsp *rsp,

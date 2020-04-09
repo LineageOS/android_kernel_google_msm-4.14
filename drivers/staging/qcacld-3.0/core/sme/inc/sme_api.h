@@ -1569,11 +1569,9 @@ QDF_STATUS sme_set_lost_link_info_cb(mac_handle_t mac_handle,
  * Return: QDF_STATUS_SUCCESS or non-zero on failure.
  */
 QDF_STATUS sme_update_new_channel_event(tHalHandle hal, uint8_t session_id);
-#ifdef WLAN_POWER_DEBUGFS
 QDF_STATUS sme_power_debug_stats_req(tHalHandle hal, void (*callback_fn)
 				(struct  power_stats_response *response,
 				void *context), void *power_stats_context);
-#endif
 
 #ifdef WLAN_FEATURE_BEACON_RECEPTION_STATS
 /**
