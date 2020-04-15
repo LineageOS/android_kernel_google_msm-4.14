@@ -11743,6 +11743,7 @@ QDF_STATUS sme_ll_stats_set_thresh(tHalHandle hal,
 
 #endif /* WLAN_FEATURE_LINK_LAYER_STATS */
 
+#ifdef WLAN_POWER_DEBUG
 /**
  * sme_power_debug_stats_req() - SME API to collect Power debug stats
  * @callback_fn: Pointer to the callback function for Power stats event
@@ -11779,6 +11780,7 @@ QDF_STATUS sme_power_debug_stats_req(tHalHandle hal, void (*callback_fn)
 	}
 	return status;
 }
+#endif
 
 #ifdef WLAN_FEATURE_BEACON_RECEPTION_STATS
 QDF_STATUS sme_beacon_debug_stats_req(
