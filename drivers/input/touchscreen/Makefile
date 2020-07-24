@@ -114,3 +114,5 @@ obj-$(CONFIG_TOUCHSCREEN_HIMAX_CHIPSET)»       += hxchipset/
 obj-$(CONFIG_TOUCHSCREEN_TBN)		+= qmi_tbn_v01.o touch_bus_negotiator.o
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_TCM)	+= synaptics_tcm/
 obj-$(CONFIG_TOUCHSCREEN_RAYDIUM_CHIPSET)  += raydium_wt030/
+obj-$(CONFIG_TOUCHSCREEN_FTS)		+= fts_touch/
+obj-$(CONFIG_TOUCHSCREEN_FTS_S5)	+= fts_touch_s5/
