@@ -2,7 +2,7 @@
 # STMicroelectronics TOUCH driver configuration
 #
 
-config TOUCHSCREEN_FTS
+config TOUCHSCREEN_FTS_S5
 	tristate "STMicroelectronics multitouch touchscreen - FingerTipS (FTM5)"
 	depends on SPI
 	select TOUCHSCREEN_HEATMAP
