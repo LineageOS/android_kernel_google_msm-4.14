@@ -1,5 +1,5 @@
 # FTM5 support
-obj-$(CONFIG_TOUCHSCREEN_FTS)	+= ftm5.o
+obj-$(CONFIG_TOUCHSCREEN_FTS_S5)	+= ftm5.o
 ftm5-objs = fts.o fts_proc.o
 ftm5-objs += \
 	fts_lib/ftsCompensation.o fts_lib/ftsCore.o fts_lib/ftsError.o \

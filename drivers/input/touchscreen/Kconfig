@@ -1329,4 +1329,7 @@ config TOUCHSCREEN_RAYDIUM_CHIPSET
 
 	  If unsure, say N.
 
+source "drivers/input/touchscreen/fts_touch/Kconfig"
+source "drivers/input/touchscreen/fts_touch_s5/Kconfig"
+
 endif
