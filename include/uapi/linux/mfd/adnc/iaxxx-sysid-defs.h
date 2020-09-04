@@ -27,7 +27,11 @@
  * Includes
  ***************************************************************************/
 #include <linux/kernel.h>
+#ifdef __KERNEL__
+#include <linux/limits.h> /* for INT_MIN, INT_MAX */
+#else
 #include <limits.h> /* for INT_MIN, INT_MAX */
+#endif
 
 /****************************************************************************
  * Constants & Macros
