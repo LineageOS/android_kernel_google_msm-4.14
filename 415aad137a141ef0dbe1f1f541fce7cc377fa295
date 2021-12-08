@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "7e1afa01_9b9a48b2",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 3
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 2195
+      },
+      "writtenOn": "2021-12-08T23:19:43Z",
+      "side": 1,
+      "message": "This could be upstreamed, if they accept patches to msm-extra",
+      "revId": "415aad137a141ef0dbe1f1f541fce7cc377fa295",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    }
+  ]
+}
