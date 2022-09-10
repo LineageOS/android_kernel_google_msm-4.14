@@ -33,6 +33,24 @@
       "message": "Actually only https://review.lineageos.org/c/LineageOS/android_kernel_google_msm-4.14/+/338235\nshould be needed anyway, since -fuse-ld\u003dlld is only removed from HOSTCFLAGS but not HOSTLDFLAGS",
       "revId": "15981942b1d1c067c3a740cc95c6b3f7260102c6",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "3385fe90_e1cd238c",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 13648
+      },
+      "writtenOn": "2022-09-10T20:08:37Z",
+      "side": 1,
+      "message": "Yes, https://review.lineageos.org/q/I8332132775e7cc220eb7d1e20911223bca65e1e2 alone is enough. Also confirmed on 4.9.",
+      "parentUuid": "11f40c4c_910114d2",
+      "revId": "15981942b1d1c067c3a740cc95c6b3f7260102c6",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ]
 }
