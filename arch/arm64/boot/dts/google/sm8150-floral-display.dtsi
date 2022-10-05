@@ -154,14 +154,6 @@
 	};
 };
 
-&sde_dp {
-	status = "disabled";
-};
-
-&mdss_mdp {
-	connectors = <&sde_rscc &sde_wb &sde_dsi>;
-};
-
 &soc {
 	dsi_panel_pwr_supply_floral: dsi_panel_pwr_supply_floral {
 		#address-cells = <1>;
