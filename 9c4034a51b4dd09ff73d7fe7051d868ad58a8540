@@ -16,6 +16,23 @@
       "message": "?",
       "revId": "9c4034a51b4dd09ff73d7fe7051d868ad58a8540",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "de9015d4_d5a01709",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 4550
+      },
+      "writtenOn": "2022-10-12T18:03:37Z",
+      "side": 1,
+      "message": "\u003e Patch Set 1:\n\u003e \n\u003e does this actually work?\n\nI doubt it, it uses the same pins as uart",
+      "revId": "9c4034a51b4dd09ff73d7fe7051d868ad58a8540",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ]
 }
