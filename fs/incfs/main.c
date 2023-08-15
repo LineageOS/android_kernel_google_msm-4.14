@@ -16,7 +16,6 @@ static struct file_system_type incfs_fs_type = { .owner = THIS_MODULE,
 						 .mount = incfs_mount_fs,
 						 .kill_sb = incfs_kill_sb,
 						 .fs_flags = 0 };
-
 static int __init init_incfs_module(void)
 {
 	int err = 0;
