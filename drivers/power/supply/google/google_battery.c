@@ -3684,7 +3684,6 @@ static int debug_chg_health_set_stage(void *data, u64 val)
 /* Adaptive Charging */
 DEFINE_SIMPLE_ATTRIBUTE(debug_chg_health_stage_fops, NULL,
 			debug_chg_health_set_stage, "%u\n");
-#endif
 
 /* debug variable */
 static int raw_profile_cycles;
@@ -3756,6 +3755,7 @@ static ssize_t debug_set_chg_raw_profile(struct file *filp,
 BATTERY_DEBUG_ATTRIBUTE(debug_chg_raw_profile_fops,
 			debug_get_chg_raw_profile,
 			debug_set_chg_raw_profile);
+#endif
 
 /* ------------------------------------------------------------------------- */
 static ssize_t charge_stats_actual_store(struct device *dev,
@@ -4678,7 +4678,9 @@ static const struct attribute_group batt_attr_grp = {
 
 static int batt_init_fs(struct batt_drv *batt_drv)
 {
+#ifdef CONFIG_DEBUG_FS
 	struct dentry *de = NULL;
+#endif
 	int ret;
 
 	ret = sysfs_create_group(&batt_drv->psy->dev.kobj, &batt_attr_grp);
