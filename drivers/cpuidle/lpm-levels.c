@@ -1423,10 +1423,12 @@ static bool psci_enter_sleep(struct lpm_cpu *cpu, int idx, bool from_idle)
 			0xdeaffeed, 0xdeaffeed, from_idle);
 	stop_critical_timings();
 
+#ifdef CONFIG_DEBUG_FS
 	if (!from_idle && pm_gpio_debug_mask) {
 		msm_gpio_dump(NULL);
 		pmic_gpio_dump(NULL);
 	}
+#endif
 
 	success = !arm_cpuidle_suspend(state_id);
 
