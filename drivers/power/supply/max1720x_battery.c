@@ -4666,14 +4666,14 @@ static int max1720x_probe(struct i2c_client *client,
 		goto psy_unregister;
 	}
 
-	chip->ce_log = debugfs_logbuffer_register("batt_ce");
+	chip->ce_log = logbuffer_register("batt_ce");
 	if (IS_ERR(chip->ce_log)) {
 		ret = PTR_ERR(chip->ce_log);
 		dev_err(dev, "failed to obtain logbuffer, ret=%d\n", ret);
 		chip->ce_log = NULL;
 	}
 
-	chip->maxfg_log = debugfs_logbuffer_register("maxfg");
+	chip->maxfg_log = logbuffer_register("maxfg");
 	if (IS_ERR(chip->maxfg_log)) {
 		ret = PTR_ERR(chip->maxfg_log);
 		dev_err(dev, "failed to obtain logbuffer, ret=%d\n", ret);
@@ -4706,8 +4706,12 @@ static int max1720x_remove(struct i2c_client *client)
 {
 	struct max1720x_chip *chip = i2c_get_clientdata(client);
 
+	if (chip->maxfg_log) {
+		logbuffer_unregister(chip->maxfg_log);
+		chip->maxfg_log = NULL;
+	}
 	if (chip->ce_log) {
-		debugfs_logbuffer_unregister(chip->ce_log);
+		logbuffer_unregister(chip->ce_log);
 		chip->ce_log = NULL;
 	}
 	max1720x_cleanup_history(chip);

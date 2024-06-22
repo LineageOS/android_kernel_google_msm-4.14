@@ -53,7 +53,9 @@ static bool gbms_storage_init_done;
 
 static int gbms_providers_count;
 static struct gbms_storage_provider gbms_providers[GBMS_PROVIDERS_MAX];
+#ifdef CONFIG_DEBUG_FS
 static struct dentry *rootdir;
+#endif
 
 /* 1 << 5 = 64 entries */
 #define GBMS_HASHTABLE_SIZE	5
@@ -77,6 +79,7 @@ static char *tag2cstr(gbms_tag_cstr_t buff, gbms_tag_t tag)
 	return buff;
 }
 
+#ifdef CONFIG_DEBUG_FS
 static gbms_tag_t cstr2tag(gbms_tag_cstr_t buff)
 {
 	gbms_tag_t tag;
@@ -88,6 +91,7 @@ static gbms_tag_t cstr2tag(gbms_tag_cstr_t buff)
 
 	return tag;
 }
+#endif
 
 /* ------------------------------------------------------------------------- */
 

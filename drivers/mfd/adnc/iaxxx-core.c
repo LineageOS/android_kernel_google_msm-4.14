@@ -234,12 +234,14 @@ static int iaxxx_fw_bootup_regmap_init(struct iaxxx_priv *priv)
 	rc = iaxxx_application_regmap_init(priv);
 	if (rc)
 		goto err_regmap;
+#ifdef CONFIG_DEBUG_FS
 	/* Add debugfs node for regmap */
 	rc = iaxxx_dfs_switch_regmap(dev, priv->regmap, priv->dfs_node);
 	if (rc)
 		dev_err(dev, "%s: Failed to create debugfs entry\n", __func__);
 	else
 		dev_info(dev, "%s: done\n", __func__);
+#endif
 	return rc;
 
 err_regmap:

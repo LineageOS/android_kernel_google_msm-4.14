@@ -11,13 +11,17 @@ static struct workqueue_struct *power_pm_monitor_wq;
 struct delayed_work dwork;
 
 extern void pm_print_debug_wakeup_sources(void);
+#ifdef CONFIG_DEBUG_FS
 extern void msm_rpmh_master_stats_dump(void);
 extern int msm_rpmstats_stats_dump(void);
+#endif
 static void power_pm_monitor_work_func(struct work_struct *work)
 {
 	struct timespec ts;
 	struct rtc_time tm;
+#ifdef CONFIG_DEBUG_FS
 	int ret = 0;
+#endif
 
 	getnstimeofday(&ts);
 	rtc_time_to_tm(ts.tv_sec - (sys_tz.tz_minuteswest * 60), &tm);
@@ -26,10 +30,12 @@ static void power_pm_monitor_work_func(struct work_struct *work)
 
 	/* Show wakeup source */
 	pm_print_debug_wakeup_sources();
+#ifdef CONFIG_DEBUG_FS
 	msm_rpmh_master_stats_dump();
 	ret = msm_rpmstats_stats_dump();
 	if (ret < 0)
 		pr_err("Unabled to dump System sleep stats, ret=%d", ret);
+#endif
 
 	queue_delayed_work(power_pm_monitor_wq, &dwork,
 				msecs_to_jiffies(MSM_POWER_UTIL_DELAY_TIME));

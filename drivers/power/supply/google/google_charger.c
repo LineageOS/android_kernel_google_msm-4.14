@@ -3048,7 +3048,9 @@ DEFINE_SIMPLE_ATTRIBUTE(bd_enabled_fops, bd_enabled_get,
 static int chg_init_fs(struct chg_drv *chg_drv)
 {
 	int ret;
+#ifdef CONFIG_DEBUG_FS
 	struct dentry *de = NULL;
+#endif
 
 	ret = device_create_file(chg_drv->device, &dev_attr_charge_stop_level);
 	if (ret != 0) {
@@ -4067,7 +4069,7 @@ static int google_charger_probe(struct platform_device *pdev)
 	else
 		chg_init_votables(chg_drv);
 
-	chg_drv->pps_data.log = debugfs_logbuffer_register("pps");
+	chg_drv->pps_data.log = logbuffer_register("pps");
 	if (IS_ERR(chg_drv->pps_data.log)) {
 		ret = PTR_ERR(chg_drv->pps_data.log);
 		dev_err(chg_drv->device,
@@ -4120,7 +4122,7 @@ static int google_charger_remove(struct platform_device *pdev)
 		alarm_try_to_cancel(&chg_drv->chg_wakeup_alarm);
 
 		if (chg_drv->pps_data.log)
-			debugfs_logbuffer_unregister(chg_drv->pps_data.log);
+			logbuffer_unregister(chg_drv->pps_data.log);
 	}
 
 	return 0;
