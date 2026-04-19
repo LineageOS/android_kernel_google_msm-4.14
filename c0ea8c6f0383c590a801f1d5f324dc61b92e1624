@@ -33,6 +33,23 @@
       "message": "https://android.googlesource.com/kernel/common/+/ff5bf35998cc4de9f88f1e5f0cc3637d6107d293",
       "revId": "c0ea8c6f0383c590a801f1d5f324dc61b92e1624",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "984a3b4d_8136168d",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 19979
+      },
+      "writtenOn": "2026-04-19T22:05:30Z",
+      "side": 1,
+      "message": "android12-5.4 branch of common kernel",
+      "revId": "c0ea8c6f0383c590a801f1d5f324dc61b92e1624",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ]
 }
