@@ -21,9 +21,6 @@
 #include "integrity.h"
 #include "vfs.h"
 
-/* Needed for kernel 4.14 - remove for later kernels */
-typedef unsigned int __poll_t;
-
 #define READ_WRITE_FILE_MODE 0666
 
 static bool is_pseudo_filename(struct mem_range name);

@@ -1,4 +1,5 @@
 /* Copyright (c) 2011-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -32,7 +33,7 @@ static inline void signal_event(struct kgsl_device *device,
 {
 	list_del(&event->node);
 	event->result = result;
-	queue_work(device->events_wq, &event->work);
+	kthread_queue_work(device->events_worker, &event->work);
 }
 
 static const char *priorities[KGSL_EVENT_NUM_PRIORITIES] = {
@@ -50,12 +51,12 @@ const char *prio_to_string(enum kgsl_priority prio)
 
 /**
  * _kgsl_event_worker() - Work handler for processing GPU event callbacks
- * @work: Pointer to the work_struct for the event
+ * @work: Pointer to the kthread_work for the event
  *
- * Each event callback has its own work struct and is run on a event specific
- * workqeuue.  This is the worker that queues up the event callback function.
+ * Each event callback has its own kthread_work struct and is run on a event specific
+ * worker thread.  This is the worker that queues up the event callback function.
  */
-static void _kgsl_event_worker(struct work_struct *work)
+static void _kgsl_event_worker(struct kthread_work *work)
 {
 	struct kgsl_event *event = container_of(work, struct kgsl_event, work);
 	int id = KGSL_CONTEXT_ID(event->context);
@@ -299,7 +300,7 @@ int kgsl_add_event(struct kgsl_device *device, struct kgsl_event_group *group,
 	event->created = jiffies;
 	event->group = group;
 
-	INIT_WORK(&event->work, _kgsl_event_worker);
+	kthread_init_work(&event->work, _kgsl_event_worker);
 
 	trace_kgsl_register_event(KGSL_CONTEXT_ID(context), timestamp, func);
 
@@ -314,7 +315,7 @@ int kgsl_add_event(struct kgsl_device *device, struct kgsl_event_group *group,
 
 	if (timestamp_cmp(retired, timestamp) >= 0) {
 		event->result = KGSL_EVENT_RETIRED;
-		queue_work(device->events_wq, &event->work);
+		kthread_queue_work(device->events_worker, &event->work);
 		spin_unlock(&group->lock);
 		return 0;
 	}
