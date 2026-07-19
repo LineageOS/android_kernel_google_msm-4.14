@@ -11,8 +11,8 @@ HOST_CMN_CONVG_PTT := $(DEPTH)/cmn_dev/utils/ptt
 
 include $(obj)/$(DEPTH)/os/linux/Makefile-linux.common
 
-INCS += -Iinclude/nbuf -Iinclude/net -Iinclude/os
-INCS += -Inbuf/linux -Inet/linux -Ios/linux
+INCS += -I $(srctree)/include/nbuf -I $(srctree)/include/net -I $(srctree)/include/os
+INCS += -I $(srctree)/nbuf/linux -I $(srctree)/net/linux -I $(srctree)/os/linux
 INCS += -I$(WLAN_TOP)/../../include
 INCS += -I$(WLAN_TOP)/cmn_dev/qdf/inc
 INCS += -I$(WLAN_TOP)/cmn_dev/qdf/linux/src
