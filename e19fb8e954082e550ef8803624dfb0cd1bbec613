@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "e6bcb0ed_c8233a12",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 16185
+      },
+      "writtenOn": "2026-09-09T19:10:11Z",
+      "side": 1,
+      "message": "`RESULT: 8/8 ok, 0 failed or hung` from luk\u0027s xxxtest binary",
+      "revId": "e19fb8e954082e550ef8803624dfb0cd1bbec613",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    }
+  ]
+}
